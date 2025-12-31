@@ -6,9 +6,9 @@ import { ConfigService } from '@nestjs/config';
 export class CloudinaryService {
   constructor(private configService: ConfigService) {
     cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
+      cloud_name: "djwtehyeg",
+      api_key: "168238965581861",
+      api_secret: "e2UOsy_EKwChcKLT0qFQ-hBVPfI",
     });
   }
 

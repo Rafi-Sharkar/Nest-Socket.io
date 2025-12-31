@@ -282,6 +282,124 @@
       padding: 20px;
       color: #666;
     }
+
+    /* File Upload */
+    .file-upload-btn {
+      padding: 12px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .file-upload-btn:hover {
+      background: #764ba2;
+      transform: scale(1.05);
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* File Message */
+    .file-message {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 18px;
+      border-bottom-right-radius: 5px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 300px;
+    }
+
+    .message.received .file-message {
+      background: white;
+      color: #333;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      border-bottom-left-radius: 5px;
+      border-bottom-right-radius: 18px;
+    }
+
+    .file-icon {
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    .file-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-size {
+      font-size: 11px;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .file-action-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: inherit;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .file-action-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .message.received .file-action-btn {
+      background: rgba(0,0,0,0.1);
+    }
+
+    .message.received .file-action-btn:hover {
+      background: rgba(0,0,0,0.2);
+    }
+
+    /* Drag and Drop */
+    .messages-container.drag-over {
+      background: #f0e6ff !important;
+      border: 2px dashed #667eea;
+    }
+
+    .upload-progress {
+      display: none;
+      text-align: center;
+      padding: 10px;
+      color: #667eea;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .upload-progress.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -314,6 +432,11 @@
       <div class="loading" id="loadingIndicator">Loading chat history...</div>
     </div>
 
+    <!-- Upload Progress -->
+    <div class="upload-progress" id="uploadProgress">
+      📤 Uploading file...
+    </div>
+
     <!-- Typing Indicator -->
     <div class="typing-indicator" id="typingIndicator">
       <span id="typingText">User is typing</span>
@@ -326,6 +449,14 @@
 
     <!-- Input -->
     <div class="input-container">
+      <button class="file-upload-btn" id="fileUploadBtn" onclick="document.getElementById('fileInput').click()" title="Share file">
+        📎 File
+      </button>
+      <input 
+        type="file"
+        id="fileInput"
+        onchange="handleFileSelect(event)"
+      />
       <input 
         type="text" 
         id="messageInput" 
@@ -363,7 +494,13 @@
 
     // ==================== SOCKET CONNECTION ====================
     function connectSocket() {
-      socket = io('http://localhost:3000');
+      socket = io('http://localhost:5000', {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5,
+        transports: ['websocket', 'polling']
+      });
 
       // Connection established
       socket.on('connect', () => {
@@ -381,6 +518,16 @@
       socket.on('disconnect', () => {
         console.log('❌ Disconnected from server');
         updateConnectionStatus(false);
+      });
+
+      // Connection error
+      socket.on('connect_error', (error) => {
+        console.error('❌ Connection error:', error);
+        updateConnectionStatus(false);
+      });
+
+      socket.on('error', (error) => {
+        console.error('❌ Socket error:', error);
       });
 
       // ==================== EVENT LISTENERS ====================
@@ -472,6 +619,15 @@
           }
         });
       });
+
+      // File deleted
+      socket.on('fileDeleted', (data) => {
+        console.log('🗑️ File deleted:', data.messageId);
+        const msgEl = document.querySelector(`[data-message-id="${data.messageId}"]`);
+        if (msgEl) {
+          msgEl.remove();
+        }
+      });
     }
 
     // ==================== MESSAGE FUNCTIONS ====================
@@ -496,8 +652,36 @@
           : '<span class="read-status">✓</span>';
       }
 
+      let contentHtml = '';
+
+      // Check if message has file
+      if (message.fileInstance) {
+        const file = message.fileInstance;
+        const fileIcon = getFileIcon(file.mimeType);
+        const fileSize = formatFileSize(file.size);
+        const filename = truncateFilename(file.originalFilename || 'File', 30);
+
+        contentHtml = `
+          <div class="message-bubble" style="padding: 0;">
+            <div class="file-message">
+              <div class="file-icon">${fileIcon}</div>
+              <div class="file-info">
+                <div class="file-name" title="${file.originalFilename}">${escapeHtml(filename)}</div>
+                <div class="file-size">${fileSize}</div>
+              </div>
+              <div class="file-actions">
+                <button class="file-action-btn" onclick="downloadFile('${escapeHtml(file.url)}', '${escapeHtml(file.originalFilename || 'download')}')" title="Download">⬇️</button>
+                ${isSent ? `<button class="file-action-btn" onclick="deleteFile(${message.id})" title="Delete">🗑️</button>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        contentHtml = `<div class="message-bubble">${escapeHtml(message.content)}</div>`;
+      }
+
       messageDiv.innerHTML = `
-        <div class="message-bubble">${escapeHtml(message.content)}</div>
+        ${contentHtml}
         <div class="message-info">
           <span>${time}</span>
           ${readStatus}
@@ -607,6 +791,138 @@
       div.textContent = text;
       return div.innerHTML;
     }
+
+    // ==================== FILE FUNCTIONS ====================
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // Validate file size (100MB max)
+      const maxSize = 100 * 1024 * 1024;
+      if (file.size > maxSize) {
+        alert('File size must be less than 100MB');
+        event.target.value = '';
+        return;
+      }
+
+      // Show upload progress
+      showUploadProgress(true);
+
+      // Read file as data URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        const base64String = dataUrl.split(',')[1];
+
+        // Send file via socket
+        socket.emit('sendFile', {
+          senderId: userId,
+          receiverId: friendId,
+          file: {
+            buffer: base64String,
+            originalname: file.name,
+            mimetype: file.type,
+            size: file.size
+          }
+        });
+
+        // Reset file input
+        event.target.value = '';
+        showUploadProgress(false);
+      };
+
+      reader.onerror = () => {
+        alert('Failed to read file');
+        showUploadProgress(false);
+        event.target.value = '';
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    function downloadFile(url, filename) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function deleteFile(messageId) {
+      if (confirm('Are you sure you want to delete this file?')) {
+        socket.emit('deleteFile', {
+          messageId: messageId,
+          senderId: userId
+        });
+      }
+    }
+
+    function getFileIcon(mimeType) {
+      if (mimeType.startsWith('image/')) return '🖼️';
+      if (mimeType.startsWith('video/')) return '🎥';
+      if (mimeType.startsWith('audio/')) return '🎵';
+      if (mimeType.includes('pdf') || mimeType.includes('document') || mimeType.includes('word')) return '📄';
+      if (mimeType.includes('sheet') || mimeType.includes('excel')) return '📊';
+      if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '📑';
+      return '📎';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    function truncateFilename(filename, maxLength) {
+      if (filename.length <= maxLength) return filename;
+      const ext = filename.split('.').pop();
+      const name = filename.slice(0, filename.lastIndexOf('.'));
+      const truncated = name.slice(0, maxLength - ext.length - 4) + '...';
+      return truncated + '.' + ext;
+    }
+
+    function showUploadProgress(show) {
+      const progress = document.getElementById('uploadProgress');
+      if (show) {
+        progress.classList.add('active');
+      } else {
+        progress.classList.remove('active');
+      }
+    }
+
+    // ==================== DRAG AND DROP ====================
+
+    const messagesContainer = document.getElementById('messagesContainer');
+
+    messagesContainer.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      messagesContainer.classList.add('drag-over');
+    });
+
+    messagesContainer.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      messagesContainer.classList.remove('drag-over');
+    });
+
+    messagesContainer.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      messagesContainer.classList.remove('drag-over');
+
+      const files = e.dataTransfer.files;
+      if (files && files[0]) {
+        // Simulate file input change
+        const fileInput = document.getElementById('fileInput');
+        fileInput.files = files;
+        handleFileSelect({ target: fileInput });
+      }
+    });
 
     // ==================== EVENT BINDINGS ====================
 
