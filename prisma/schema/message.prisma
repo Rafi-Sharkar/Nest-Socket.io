@@ -1,0 +1,16 @@
+model Message {
+  id         Int       @id @default(autoincrement())
+  content    String
+  createdAt  DateTime  @default(now())
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+
+  senderId   Int
+  receiverId Int
+
+  sender     User @relation("SentMessages", fields: [senderId], references: [id])
+  receiver   User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  fileInstanceId String?
+  fileInstance   FileInstance? @relation(fields: [fileInstanceId], references: [id])
+}
